@@ -1,0 +1,23 @@
+
+
+
+dataset_path: ../Datasets/Flavia/dataset.csv
+image_path: ../Datasets/Flavia/Leaves
+
+checkpoint_path: checkpoints/
+logdir: logs
+prediction_logdir: predictions
+
+restore_from_checkpoint: False
+Train: True
+Test: False
+
+
+input_size: 256
+input_channels: 3
+latent_space_size: 128
+
+epochs: 150
+early_stopping_patience: 4
+batch_size: 128
+kld_weight: 0.00020
