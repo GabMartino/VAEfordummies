@@ -33,7 +33,6 @@ class LeafDataset(torch.utils.data.Dataset):
         return len(self.image_ids)
 
     def __getitem__(self, idx):
-
         img_name = self.image_path + "/" + self.image_ids[idx] + ".jpg"
         image = Image.open(img_name)
         label = self.labels[idx]
@@ -53,7 +52,7 @@ class LeafDataLoader(pl.LightningDataModule):
         self.train_set, self.val_set = torch.utils.data.random_split(dataset, [train_len, val_len])
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=os.cpu_count())
+        return DataLoader(self.train_set, batch_size=self.batch_size, prefetch_factor=1, shuffle=True, num_workers=os.cpu_count(), pin_memory=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_set, batch_size=1, prefetch_factor=1, num_workers=os.cpu_count())
@@ -101,7 +100,14 @@ def getDataset():
 
 
 def main():
-    #getDataset()
-    dataloader = LeafDataLoader("../../Datasets/Flavia/dataset.csv", None)
+    import torchvision.transforms as T
+    transform = T.Compose([
+        T.Resize(size=(256, 256)),
+        T.ToTensor()])
+    dataloader = LeafDataLoader("../../Datasets/Flavia/dataset.csv", "../../Datasets/Flavia/Leaves", transform=transform)
+    train_data = dataloader.train_dataloader()
+    image_sample = train_data.dataset.__getitem__(0)[0]
+    print(torch.mean(torch.mean(image_sample, dim=0)))
+    print(train_data.dataset.__getitem__(0)[0].shape)
 if __name__ == "__main__":
     main()

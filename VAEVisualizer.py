@@ -63,10 +63,20 @@ class VAEScatter(pg.PlotWidget):
             self.scatter.clear()
             self.scatter.addPoints(self.tempPoints)
             boundingRect = self.scatter.boundingRect()
-            plot_x = (boundingRect.width()/self.centralWidget.width())*ev.pos().x() + boundingRect.x()
-            plot_y = (boundingRect.height()/self.centralWidget.height())*(self.centralWidget.height() - ev.pos().y()) + boundingRect.y()
-            self.mousePoint = (plot_x, plot_y)
-            self.mousePointItem = [{'pos': [plot_x, plot_y], 'data': 0}]
+            start_plot_axis_x = boundingRect.x()
+            start_plot_axis_y = boundingRect.y()
+
+            plot_width = boundingRect.width()
+            plot_height = boundingRect.height()
+
+            screen_plot_width = self.scatter.getViewWidget().size().width() -1
+            screen_plot_height = self.scatter.getViewWidget().size().height() -1
+
+            plot_click_x = (plot_width/screen_plot_width) * ev.pos().x() + start_plot_axis_x
+            plot_click_y =  (plot_height/screen_plot_height)*(screen_plot_height - ev.pos().y()) + start_plot_axis_y
+            self.mousePoint = (plot_click_x, plot_click_y)
+            print(self.mousePoint)
+            self.mousePointItem = [{'pos': [plot_click_x, plot_click_y], 'data': 0}]
             self.scatter.addPoints(self.mousePointItem)
             self.callback(self.mousePoint)
 
@@ -83,13 +93,12 @@ class VAEScatter(pg.PlotWidget):
 class ModelVAEWrapper():
 
 
-    def __init__(self, cfg,):
+    def __init__(self, cfg):
         ## Create a model
-        self.model = VAE(cfg)
         # get last checkpoint
         list_of_files = glob.glob(cfg.checkpoint_path + "*")  # * means all if need specific format then *.csv
         latest_checkpoint = max(list_of_files, key=os.path.getctime)
-        self.model = self.model.load_from_checkpoint(latest_checkpoint)
+        self.model = VAE.load_from_checkpoint(latest_checkpoint)
 
         self.latent_space = cfg.latent_space_size
 
@@ -135,10 +144,9 @@ class Window(QMainWindow):
 
 
     def update_image(self, point):
-        random_left_components = np.random.normal(size=(self.model.latent_space - 2))
+        random_left_components = [0]*(self.model.latent_space - 2)#np.random.normal(size=(self.model.latent_space - 2))
         z = np.insert(random_left_components, 0, [point[0], point[1]])
         image = self.model.generateImage(z)
-        print(image.shape)
         q_im = qimage2ndarray.array2qimage(image)
         self.imageOverlay.setPixmap(QPixmap.fromImage(q_im).scaled(self.imageOverlay.size(), Qt.KeepAspectRatio))
 

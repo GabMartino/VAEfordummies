@@ -1,4 +1,5 @@
 import pickle
+import random
 
 import hydra
 import matplotlib.pyplot as plt
@@ -49,8 +50,7 @@ def main(cfg):
     plt.show()
     plt.plot(np.mean(zs, axis=0))
     plt.show()
-
-    showMultipleImages(images[:25])
+    showMultipleImages(random.sample(images, k=25))
     plt.imshow(prediction[0][0])
     plt.show()
 if __name__ == "__main__":

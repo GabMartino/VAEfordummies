@@ -5,8 +5,11 @@ import pickle
 import cv2
 import hydra
 import numpy as np
+import torch
 import torchvision.transforms as T
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from torchinfo import summary
+
 from VAE.models.VAE import VAE
 from pytorch_lightning import loggers as pl_loggers
 from VAE.DataLoaders.LeafDataLoader import LeafDataLoader
@@ -14,6 +17,7 @@ import pytorch_lightning as pl
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg):
+    torch.cuda.empty_cache()
     transform = T.Compose([
                 T.Resize(size=(cfg.input_size, cfg.input_size)),
                 T.ToTensor()])
@@ -27,24 +31,26 @@ def main(cfg):
         mode="min"
     )
 
-    model = VAE(cfg)
+    model = VAE(cfg.input_channels, cfg.latent_space_size, cfg.hidden_dims, cfg.kernel_sizes, cfg.input_size, cfg.lr, cfg.kld_weight)
 
     if cfg.restore_from_checkpoint:
         list_of_files = glob.glob(cfg.checkpoint_path+"*")  # * means all if need specific format then *.csv
         latest_checkpoint = max(list_of_files, key=os.path.getctime)
-        model = model.load_from_checkpoint(latest_checkpoint)
+        model = VAE.load_from_checkpoint(latest_checkpoint)
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=cfg.logdir, name=str(cfg.input_size)+"/"+str(cfg.kld_weight)+"/"+str(cfg.latent_space_size))
     trainer = pl.Trainer(max_epochs=cfg.epochs,
                          accelerator="gpu",
                          devices=1,
                          logger=tb_logger,
+                         log_every_n_steps=1,
+                         detect_anomaly=True,
                          callbacks=[EarlyStopping("val_loss_epoch", patience=cfg.early_stopping_patience),
                                     checkpoint_callback])
-
+    #print(model.hparams, model.hparams_initial)
     if cfg.Train:
         trainer.fit(model, datamodule)
-
+    #summary(model, (1, 3, cfg.input_size, cfg.input_size))
     if cfg.Test:
         predictions = trainer.predict(model, datamodule)
 
