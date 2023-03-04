@@ -4,6 +4,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch import nn, optim
+from torchinfo import summary
 
 from torch.nn import functional as F
 '''
@@ -42,13 +43,12 @@ class VAE(pl.LightningModule):
 
     '''
 
-    def __init__(self, cfg,
-                        in_channels: int,
-                        latent_dim: int,
-                        hidden_dims: List = None):
+    def __init__(self, cfg):
         super().__init__()
         self.save_hyperparameters()
-        self.latent_dim = latent_dim
+        self.latent_dim = cfg.latent_space_size
+        self.in_channels = cfg.input_channels
+        self.hidden_dims = cfg.hidden_dims
         self.cfg = cfg
 
 
@@ -56,57 +56,62 @@ class VAE(pl.LightningModule):
             If no hidden_dims parameters we used the classic stack [32, 64, 128, 256, 512]
         '''
         modules = []
-        if hidden_dims is None:
-            hidden_dims = [32, 64, 128, 256, 512]
 
-        self.hidden_dims = hidden_dims
+        self.hidden_dims = cfg.hidden_dims
         '''
             Encoder
         '''
         self.last_feature_map_size = cfg.input_size
-        for h_dim in hidden_dims:
+        in_channels = self.in_channels
+        for h_dim, kernel in zip(self.hidden_dims, self.cfg.kernel_sizes):
             modules.append(
                 nn.Sequential(
                     nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size=3, stride=2, padding=0),
+                              kernel_size=kernel, stride=2, padding=0),
                     nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU())
             )
             in_channels = h_dim
-            self.last_feature_map_size = (self.last_feature_map_size - 3)/2 + 1
+            self.last_feature_map_size = (self.last_feature_map_size - kernel)/2 + 1
 
         self.last_feature_map_size = int(self.last_feature_map_size)
         self.encoder = nn.Sequential(*modules)
 
-        self.fc_mu = nn.Linear(hidden_dims[-1] * (self.last_feature_map_size**2), latent_dim)  ## take the last CNN layers and multiply by 4 ??
-        self.fc_var = nn.Linear(hidden_dims[-1] * (self.last_feature_map_size**2), latent_dim)
+        self.fc_mu = nn.Linear(self.hidden_dims[-1] * (self.last_feature_map_size**2), self.latent_dim)  ## take the last CNN layers and multiply by 4 ??
+        self.fc_var = nn.Linear(self.hidden_dims[-1] * (self.last_feature_map_size**2), self.latent_dim)
 
+        #summary(self.encoder, (1, 3, self.cfg.input_size, self.cfg.input_size))
         # Build Decoder
         modules = []
 
-        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * (self.last_feature_map_size**2))
+        self.decoder_input = nn.Linear(self.latent_dim, self.hidden_dims[-1] * (self.last_feature_map_size**2))
 
-        hidden_dims.reverse()  # the decoder is the opposite of the encoder
 
-        hidden_dims.append(3)## go back to 3 channels
+        self.hidden_dims.append(self.hidden_dims[-1])
+        self.hidden_dims.reverse()  # the decoder is the opposite of the encoder
 
-        for i in range(len(hidden_dims) - 1):
+        #self.hidden_dims.append(3)## go back to 3 channels
+
+        kernel_sizes = list(cfg.kernel_sizes)
+        kernel_sizes.reverse()
+        for i, k in zip(range(len(self.hidden_dims) - 1), kernel_sizes):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=3,
+                    nn.ConvTranspose2d(self.hidden_dims[i],
+                                       self.hidden_dims[i + 1],
+                                       kernel_size=k,
                                        stride=2,
                                        padding=0,
-                                       output_padding=0),
-                    nn.BatchNorm2d(hidden_dims[i + 1]),
+                                       output_padding=1),
+                    nn.BatchNorm2d(self.hidden_dims[i + 1]),
                     nn.LeakyReLU())
             )
 
         self.decoder = nn.Sequential(*modules)
+        #summary(self.decoder, (1, 512, self.last_feature_map_size, self.last_feature_map_size))
 
-        self.final_layer = nn.Sequential(nn.Conv2d(hidden_dims[-1], out_channels=3,
-                                                    kernel_size= 2, padding= 1),
+        self.final_layer = nn.Sequential(nn.Conv2d(self.hidden_dims[-1], out_channels=self.in_channels,
+                                                    kernel_size=4, padding= 0),
                                         nn.Tanh())
 
 
@@ -158,7 +163,8 @@ class VAE(pl.LightningModule):
         return sample
 
     def generate(self, z):
-        return self.decode(z)
+        with torch.no_grad():
+            return self.decode(z)
 
 
     '''
@@ -239,7 +245,7 @@ class VAE(pl.LightningModule):
         return out, z, labels
 
     def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=1e-4)
+        return optim.Adam(self.parameters(), lr=self.cfg.lr)
 
 
 def main():

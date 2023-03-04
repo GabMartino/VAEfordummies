@@ -27,7 +27,7 @@ def main(cfg):
         mode="min"
     )
 
-    model = VAE(cfg, cfg.input_channels, cfg.latent_space_size)
+    model = VAE(cfg)
 
     if cfg.restore_from_checkpoint:
         list_of_files = glob.glob(cfg.checkpoint_path+"*")  # * means all if need specific format then *.csv
