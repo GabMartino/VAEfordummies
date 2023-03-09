@@ -52,10 +52,10 @@ class LeafDataLoader(pl.LightningDataModule):
         self.train_set, self.val_set = torch.utils.data.random_split(dataset, [train_len, val_len])
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, prefetch_factor=1, shuffle=True, num_workers=os.cpu_count(), pin_memory=True)
+        return DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=os.cpu_count(), pin_memory=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, batch_size=1, prefetch_factor=1, num_workers=os.cpu_count())
+        return DataLoader(self.val_set, batch_size=self.batch_size, prefetch_factor=1, num_workers=os.cpu_count(), pin_memory=True)
 
     def predict_dataloader(self):
         return DataLoader(self.val_set, batch_size=1, prefetch_factor=1, num_workers=os.cpu_count())

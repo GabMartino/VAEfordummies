@@ -3,6 +3,7 @@
 ####### DATA CONFIG
 dataset_path: ../Datasets/Flavia/dataset.csv
 image_path: ../Datasets/Flavia/Leaves
+
 checkpoint_path: checkpoints/
 logdir: logs
 prediction_logdir: predictions
@@ -10,19 +11,19 @@ prediction_logdir: predictions
 ###### TRAINING CONFIG
 restore_from_checkpoint: False
 Train: True
-Test: False
+Test: True
 
-epochs: 150
-early_stopping_patience: 4
-batch_size: 64
+epochs: 15
+early_stopping_patience: 10
+batch_size: 8
 kld_weight: 0.00025
-lr: 1e-4
+lr: 1e-5
 ####### MODEL CONFIG
 
 hidden_dims: [32, 64, 128, 256, 512]
-kernel_sizes: [12, 9, 7, 3, 3]
-strides: [2, 2, 2, 2, 2]
+kernel_sizes: [3, 3, 3, 3, 3]
+strides: [1, 1, 1, 1, 1] #[1, 1, 1, 1, 1]
 
 input_size: 256
 input_channels: 3
-latent_space_size: 16
+latent_space_size: 8

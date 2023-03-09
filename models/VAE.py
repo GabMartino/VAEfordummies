@@ -3,7 +3,7 @@ from typing import List
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from torch import nn, optim
+from torch import nn, optim, autograd
 from torchinfo import summary
 
 from torch.nn import functional as F
@@ -47,6 +47,7 @@ class VAE(pl.LightningModule):
                         latent_space_size: int,
                         hidden_dims: List,
                         kernel_sizes: List,
+                        strides: List,
                         input_size: int,
                         lr: float,
                         kld_weight: float):
@@ -57,6 +58,7 @@ class VAE(pl.LightningModule):
         self.in_channels = input_channels
         self.hidden_dims = hidden_dims
         self.kernel_sizes = kernel_sizes
+        self.strides = strides
         self.input_size = input_size
         self.lr = lr
         self.kld_weight = kld_weight
@@ -68,24 +70,24 @@ class VAE(pl.LightningModule):
         '''
         self.last_feature_map_size = self.input_size
         in_channels = self.in_channels
-        for h_dim, kernel in zip(self.hidden_dims, self.kernel_sizes):
+        for h_dim, kernel, stride in zip(self.hidden_dims, self.kernel_sizes, self.strides):
             modules.append(
                 nn.Sequential(
                     nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size=kernel, stride=2, padding=0),
+                              kernel_size=kernel, stride=stride, padding=0),
                     nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU())
             )
             in_channels = h_dim
-            self.last_feature_map_size = (self.last_feature_map_size - kernel)/2 + 1
+            self.last_feature_map_size = (self.last_feature_map_size - (kernel - 1) - 1)/stride + 1
 
         self.last_feature_map_size = int(self.last_feature_map_size)
         self.encoder = nn.Sequential(*modules)
-
+        print(self.last_feature_map_size)
         self.fc_mu = nn.Linear(self.hidden_dims[-1] * (self.last_feature_map_size**2), self.latent_dim)  ## take the last CNN layers and multiply by 4 ??
         self.fc_var = nn.Linear(self.hidden_dims[-1] * (self.last_feature_map_size**2), self.latent_dim)
 
-        #summary(self.encoder, (1, 3, self.input_size, self.input_size))
+        #summary(self.encoder, (1, self.in_channels, self.input_size, self.input_size))
         # Build Decoder
         modules = []
         #print("init", self.hidden_dims[-1], self.last_feature_map_size)
@@ -102,23 +104,31 @@ class VAE(pl.LightningModule):
         decoder_kernel_size = self.kernel_sizes.copy()
         decoder_kernel_size.reverse()
 
-        for i, k in zip(range(len(decoder_hidden_dims) - 1), decoder_kernel_size):
+        reverse_strides = self.strides.copy()
+        reverse_strides.reverse()
+
+        out_size = self.last_feature_map_size
+        for i, k, s in zip(range(len(decoder_hidden_dims) - 1), decoder_kernel_size, reverse_strides):
             modules.append(
                 nn.Sequential(
                     nn.ConvTranspose2d(decoder_hidden_dims[i],
                                        decoder_hidden_dims[i + 1],
                                        kernel_size=k,
-                                       stride=2,
+                                       stride=s,
                                        padding=0,
-                                       output_padding=1),
+                                       output_padding=0),
                     nn.BatchNorm2d(decoder_hidden_dims[i + 1]),
                     nn.LeakyReLU())
             )
+            out_size = (out_size - 1)*s + (k - 1) + 1
+
 
         self.decoder = nn.Sequential(*modules)
+        #print(out_size - self.input_size + 1)
+        out_kernel_size = (out_size - self.input_size + 1)
         #summary(self.decoder, (1, self.hidden_dims[-1], self.last_feature_map_size, self.last_feature_map_size))
         self.final_layer = nn.Sequential(nn.Conv2d(decoder_hidden_dims[-1], out_channels=self.in_channels,
-                                                    kernel_size=4, padding= 0),
+                                                    kernel_size=out_kernel_size, padding= 0),
                                         nn.Sigmoid())
 
 
@@ -152,7 +162,6 @@ class VAE(pl.LightningModule):
         return eps * std + mu
 
     def decode(self, z):
-
         result = self.decoder_input(z)## Decode the sampled vector
         result = result.view(-1, self.hidden_dims[-1], self.last_feature_map_size, self.last_feature_map_size)
         result = self.decoder(result)
@@ -202,13 +211,12 @@ class VAE(pl.LightningModule):
     def loss_function(self, out, input, mu, log_var):
 
         ## (1) Reconstruction loss
-        recontruction_loss = F.mse_loss(out, input)
+        recontruction_loss = F.mse_loss(out, input, reduction='mean')
 
 
         ## (2) "Distribution Loss the sum if for the all components of the vectors, and the last mean is for the batch
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
         loss = recontruction_loss + self.kld_weight*kld_loss
-
 
         self.log("Reconstruction_loss", recontruction_loss)
         self.log("KLD_Loss", kld_loss)
@@ -220,7 +228,6 @@ class VAE(pl.LightningModule):
 
     '''
     def training_step(self, batch, batch_idx):
-
         img, labels = batch
         out, input, z, mu, log_var = self.forward(img)
         train_loss = self.loss_function(out, input, mu, log_var)
